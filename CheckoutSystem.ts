@@ -9,7 +9,7 @@ interface Payment{
     charge(amount: number):void;
 }
 interface PaymentInfo{
-    Payment: Payment,
+    payment: Payment,
     amount: number
 }
 interface Refund{
@@ -22,7 +22,7 @@ interface FraudCheck{
     check(amount: number):boolean;
 }
 interface Retry{
-    retry():void;
+    retry(payment: Payment, amount: number):void;
 }
 class Stripe implements Payment, Refund, PartialCapture{
     charge(amount: number): void {
@@ -55,29 +55,34 @@ class SecurityChecker implements FraudCheck{
     }
 }
 class Idempotent implements Retry{
-    retry(): void {
-        console.log("Retrying safely...")
+    retry(payment: Payment, amount: number): void {
+        console.log(`Retrying safely for ${amount}...`)
     }
 }
 class NonIdempotent implements Retry{
-    retry(): void {
-        console.log("Do not close or retry")
+    retry(payment: Payment, amount: number): void {
+        console.log(`Do not close or retry..retrying automatically for ${amount}`)
     }
 }
 
 class CheckoutSystem{
     constructor(
-        private fraudCheck:SecurityChecker,
+        private fraudCheck:FraudCheck,
         private retry:Retry,
     ){}
     checkout(payment:PaymentInfo[]):void{
-        payment.forEach((p)=>{
+        for(const p of payment){
             if(!this.fraudCheck.check(p.amount)){
                 console.log("Fraud Detected");
                 return;
             }
-            p.Payment.charge(p.amount);
-        });
+            try{
+                p.payment.charge(p.amount);
+            }
+            catch{
+                this.retry.retry(p.payment,p.amount);
+            }
+        }
     }
 }
 const stripe=new Stripe();
@@ -87,7 +92,7 @@ const fraud=new SecurityChecker();
 const retry=new Idempotent();
 const order=new CheckoutSystem(fraud, retry);
 order.checkout([
-    {Payment:stripe, amount:30},
-    {Payment:wallet, amount:20},
-    {Payment:paypal, amount:50},
+    {payment:stripe, amount:30},
+    {payment:wallet, amount:20},
+    {payment:paypal, amount:50},
 ]);
